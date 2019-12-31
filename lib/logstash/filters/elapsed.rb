@@ -75,6 +75,9 @@ require 'socket'
 # * an ID filed with the task ID
 # * the field `elapsed_timestamp_start` with the timestamp of the "start event"
 #
+# The timestamp field used to calculate elapsed time defaults to @timestamp but
+# can be overridden using the timestamp_field config property.
+#
 class LogStash::Filters::Elapsed < LogStash::Filters::Base
   PREFIX = "elapsed_"
   ELAPSED_FIELD = PREFIX + "time"
@@ -98,6 +101,10 @@ class LogStash::Filters::Elapsed < LogStash::Filters::Base
   # This value must uniquely identify the task in the system, otherwise
   # it's impossible to match the couple of events.
   config :unique_id_field, :validate => :string, :required => true
+
+  # The name of the field containing the timestamp.
+  # Defaults to "@timestamp"
+  config :timestamp_field, :validate => :string, :required => false, :default => "@timestamp"
 
   # The amount of seconds after an "end event" can be considered lost.
   # The corresponding "start event" is discarded and an "expired event"
@@ -158,13 +165,13 @@ class LogStash::Filters::Elapsed < LogStash::Filters::Base
       if(@start_events.has_key?(unique_id))
         start_event = @start_events.delete(unique_id).event
         @mutex.unlock
-        elapsed = event.get("@timestamp") - start_event.get("@timestamp")
+        elapsed = event.get(timestamp_field) - start_event.get(timestamp_field)
         if(@new_event_on_match)
-          elapsed_event = new_elapsed_event(elapsed, unique_id, start_event.get("@timestamp"))
+          elapsed_event = new_elapsed_event(elapsed, unique_id, start_event.get(timestamp_field))
           filter_matched(elapsed_event)
           yield elapsed_event if block_given?
         else
-          return add_elapsed_info(event, elapsed, unique_id, start_event.get("@timestamp"))
+          return add_elapsed_info(event, elapsed, unique_id, start_event.get(timestamp_field))
         end
       else
         @mutex.unlock
@@ -218,7 +225,7 @@ class LogStash::Filters::Elapsed < LogStash::Filters::Base
       error_event.set(HOST_FIELD, Socket.gethostname)
       error_event.set(@unique_id_field, element.event.get(@unique_id_field) )
       error_event.set(ELAPSED_FIELD, element.age)
-      error_event.set(TIMESTAMP_START_EVENT_FIELD, element.event.get("@timestamp") )
+      error_event.set(TIMESTAMP_START_EVENT_FIELD, element.event.get(timestamp_field) )
 
       events << error_event
       filter_matched(error_event)
